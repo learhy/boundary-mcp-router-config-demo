@@ -1,0 +1,123 @@
+name: boundary-bgp-demo
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: bgp-demo-db
+    environment:
+      POSTGRES_USER: boundary
+      POSTGRES_PASSWORD: boundarypw
+      POSTGRES_DB: boundary
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U boundary -d boundary"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      bgp-net:
+        ipv4_address: 10.100.0.10
+
+  boundary:
+    image: hashicorp/boundary:0.19
+    container_name: bgp-demo-boundary
+    command:
+      - "boundary"
+      - "dev"
+      - "-api-listen-address=0.0.0.0:9200"
+      - "-cluster-listen-address=0.0.0.0:9201"
+      - "-ops-listen-address=0.0.0.0:9203"
+      - "-proxy-listen-address=0.0.0.0:9202"
+      - "-controller-public-cluster-address=127.0.0.1:9201"
+      - "-worker-public-address=127.0.0.1:9202"
+      - "-host-address=localbox"
+      - "-target-default-port=22"
+      - "-id-suffix=1234567890"
+      - "-secondary-id-suffix=0987654321"
+      - "-login-name=admin"
+      - "-password=adminadmin"
+      - "-unprivileged-login-name=user"
+      - "-unprivileged-password=useruseruser"
+      - "-skip-alias-target-creation"
+      - "-database-url=postgres://boundary:boundarypw@db:5432/boundary?sslmode=disable"
+    environment:
+      BOUNDARY_DEV_LOG_LEVEL: info
+    ports:
+      - "9200:9200"
+      - "9201:9201"
+      - "9202:9202"
+      - "9203:9203"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      bgp-net:
+        ipv4_address: 10.100.0.20
+
+  # FRR Router 1
+  frr-r1:
+    build:
+      context: ./config/frr-r1
+      dockerfile: Dockerfile
+    container_name: bgp-demo-r1
+    hostname: r1
+    privileged: true
+    volumes:
+      - ./config/frr-r1/daemons:/etc/frr/daemons
+      - ./config/frr-r1/frr.conf:/etc/frr/frr.conf
+      - ./config/frr-r1/vtysh.conf:/etc/frr/vtysh.conf
+    networks:
+      bgp-net:
+        ipv4_address: 10.100.1.1
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+
+  # FRR Router 2
+  frr-r2:
+    build:
+      context: ./config/frr-r2
+      dockerfile: Dockerfile
+    container_name: bgp-demo-r2
+    hostname: r2
+    privileged: true
+    volumes:
+      - ./config/frr-r2/daemons:/etc/frr/daemons
+      - ./config/frr-r2/frr.conf:/etc/frr/frr.conf
+      - ./config/frr-r2/vtysh.conf:/etc/frr/vtysh.conf
+    networks:
+      bgp-net:
+        ipv4_address: 10.100.2.1
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+
+  # FRR Router 3
+  frr-r3:
+    build:
+      context: ./config/frr-r3
+      dockerfile: Dockerfile
+    container_name: bgp-demo-r3
+    hostname: r3
+    privileged: true
+    volumes:
+      - ./config/frr-r3/daemons:/etc/frr/daemons
+      - ./config/frr-r3/frr.conf:/etc/frr/frr.conf
+      - ./config/frr-r3/vtysh.conf:/etc/frr/vtysh.conf
+    networks:
+      bgp-net:
+        ipv4_address: 10.100.3.1
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+
+volumes:
+  db-data:
+
+networks:
+  bgp-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.100.0.0/16
